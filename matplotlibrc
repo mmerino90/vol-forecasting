@@ -1,0 +1,1 @@
+backend: Agg  # scripts only save PNGs; also avoids Tk, which a venv on Windows may not find
