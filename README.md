@@ -8,6 +8,8 @@ A computational finance project: forecasting the volatility of the S&P 500 and 2
 - **Volatility clustering:** returns themselves are nearly unpredictable, but the autocorrelation of |returns| is **0.31** at lag 1 and still **0.15** a month later, which is what makes volatility forecastable.
 - **Baselines (2015–2026, 2,970 out-of-sample days):** HAR has the lowest MSE at both horizons. GARCH(1,1) has the lowest QLIKE (**3%** below HAR at 5 days, **7%** at 22 days). The two loss functions disagree, so "best model" depends on how you score it.
 - **Machine learning (27 assets, 80,000 out-of-sample asset-days):** XGBoost and a small neural network do **not** beat a plain linear regression on the same features. At 5 days, QLIKE relative to HAR is **0.893** for the linear model, 0.915 for XGBoost and 0.938 for the MLP. At 22 days XGBoost loses to HAR on 15 of 27 assets and the MLP on 20. The gains over HAR come from better inputs (logs, the VIX, quarterly vol), not from non-linear models.
+- **Statistically tested (Diebold–Mariano, pooled over 27 assets):** at 5 days the linear model beats HAR (QLIKE ratio 0.879, p = 0.006), and XGBoost is significantly *worse* than the linear model (p = 0.008). At 22 days only GARCH beats HAR (p = 0.043). MSE is too noisy to separate any two models on almost any asset.
+- **Crises:** in COVID 2020 every model cuts HAR's QLIKE by 38–56%. In 2022 and the April 2025 tariff shock, the linear model with the VIX does best (0.74–0.76 of HAR), while GARCH is no better than HAR in 2025.
 - **No look-ahead, tested:** a unit test scrambles all returns after a cutoff date and checks that no forecast made before it changes. Each test fails when the bug is planted on purpose.
 
 ## Phases
@@ -17,7 +19,7 @@ A computational finance project: forecasting the volatility of the S&P 500 and 2
 | 1 | Data: S&P 500 + VIX, realized volatility, stylized facts | ✅ |
 | 2 | Baselines: historical vol, EWMA, GARCH(1,1), HAR | ✅ |
 | 3 | ML: linear regression, XGBoost and a small neural network on vol, returns, volume and VIX features | ✅ |
-| 4 | Evaluation: Diebold–Mariano tests, crisis periods | ⏳ |
+| 4 | Evaluation: Diebold–Mariano tests, crisis periods | ✅ |
 | 5 | Application: volatility targeting with transaction costs (Sharpe ratio, drawdown) | ⏳ |
 
 ## Results
@@ -104,7 +106,48 @@ Each is one model pooled across all assets, re-trained once a year on every row 
 - **GARCH is still the best single model on QLIKE at 22 days**, ahead of every ML model.
 - **A fragile baseline nearly fooled me.** A linear HAR can predict a variance below zero right after a one-day crash, and QLIKE then explodes. That made every model look much better than HAR on XOM, CVX and XLE. HAR now falls back to the past month's variance when its forecast drops below anything seen in training (an "insanity filter").
 
-Which of these gaps are real, and how the models do in the 2020 and 2022 crises, is phase 4. Full table and feature importance in [results/phase3_table.md](results/phase3_table.md).
+Full table and feature importance in [results/phase3_table.md](results/phase3_table.md).
+
+### Phase 4: honest evaluation
+
+![evaluation](results/phase4_evaluation.png)
+
+A lower average loss could be luck. The **Diebold–Mariano test** asks whether the average difference in loss between two models, $\bar d = \frac{1}{n}\sum_t (L^A_t - L^B_t)$, is far from zero compared with its standard error. Because the $h$-day targets overlap and volatility clusters, $d_t$ is autocorrelated, so the standard error uses Newey–West with $2h$ lags. A unit test shows why: on overlapping data where both models are equally good, the naive formula "finds" a difference 37% of the time, Newey–West about 7%.
+
+**Pooled over the 27 assets** (QLIKE averaged across assets each day; QLIKE is scale-free, so every asset counts the same):
+
+| Horizon | Comparison | Loss ratio | p-value |
+|:--|:--|--:|--:|
+| 5 days | Linear (all features) vs HAR | **0.879** | **0.006** |
+| 5 days | GARCH(1,1) vs HAR | 0.910 | 0.015 |
+| 5 days | XGBoost vs HAR | 0.902 | 0.017 |
+| 5 days | MLP vs HAR | 0.923 | 0.055 |
+| 5 days | **XGBoost vs Linear** | 1.026 | **0.008** (XGBoost worse) |
+| 5 days | **MLP vs Linear** | 1.050 | **< 0.001** (MLP worse) |
+| 22 days | GARCH(1,1) vs HAR | **0.926** | **0.043** |
+| 22 days | Linear (all features) vs HAR | 0.988 | 0.750 |
+| 22 days | XGBoost vs HAR | 1.034 | 0.448 |
+| 22 days | MLP vs Linear | 1.110 | 0.013 (MLP worse) |
+
+- **At 5 days** the linear model is significantly better than HAR on 16 of 27 assets, and worse only on NVDA. XGBoost is better on 10, the MLP on 6. Pooled, both ML models are **significantly worse than the linear model**.
+- **At 22 days** almost nothing is significant. Only GARCH beats HAR pooled; per asset, nothing beats HAR on more than 3 of 27.
+- **MSE can't separate the models:** with MSE, no model is significantly better or worse than HAR on more than 2 assets in either direction. A few crisis days dominate it, so its standard error is huge.
+
+**By period** (5 days, pooled QLIKE relative to HAR; * = significant at 5%):
+
+| Period | Days | GARCH | Linear | XGBoost | MLP |
+|:--|--:|--:|--:|--:|--:|
+| COVID 2020 | 94 | 0.51 | **0.44** | 0.53 | 0.62 |
+| 2022 bear market | 251 | 0.87* | **0.76*** | 0.77* | 0.80* |
+| Tariff shock 2025 | 47 | 1.01 | **0.74** | 0.83 | 0.84 |
+| Calm (everything else) | 2,578 | 0.97* | **0.96*** | 0.97 | 0.98 |
+
+- Crises are where the models differ most. HAR in levels reacts badly to sudden jumps, and in COVID every other model cuts its loss by 38–56%.
+- The linear model with the VIX does best in every period, probably because the VIX jumps on the first day of a crisis while past volatility needs time to catch up.
+- In calm markets all models are within 4% of HAR.
+- Crisis windows are short (47–251 days), so their tests are weak. With 94 days, even a 56% reduction in COVID is not significant, and the unit test shows Newey–West over-rejects somewhat in short samples.
+
+Full tables, including both horizons, in [results/phase4_table.md](results/phase4_table.md).
 
 ## Usage
 
@@ -116,6 +159,7 @@ python -m pytest
 python -m experiments.phase1_data        # downloads data/ on the first run (Yahoo Finance), then works offline
 python -m experiments.phase2_baselines
 python -m experiments.phase3_ml          # ~15 minutes (GARCH on 27 assets); caches forecasts in data/
+python -m experiments.phase4_evaluation  # uses phase 3's cached forecasts
 ```
 
 ## Layout

@@ -2,7 +2,7 @@
 
 I built this project to prepare for *Numerical Methods for Finance*, *Financial Engineering* and *Applied Computational Finance*, after a [Monte Carlo option pricer](https://github.com/mmerino90/mc-option-pricing) where volatility was simply an input, σ = 20%. Here it is the thing to predict. These are the ideas that stuck, each tied to the experiment that taught it to me.
 
-*(Phases 1–3 so far; this file grows with the project.)*
+*(Phases 1–4 so far; this file grows with the project.)*
 
 ---
 
@@ -37,3 +37,19 @@ At first every model "beat" HAR by a lot on XOM, CVX and XLE. The reason: right 
 ## 8. Predicting the log gives the median, not the mean
 
 Volatility models work better in logs, because log-variance is roughly symmetric while variance has huge spikes. But $e^{\mathbb{E}[\log y]}$ is the *median* of $y$, which is below its mean (Jensen's inequality again, as in the pricer's $-\tfrac{1}{2}\sigma^2$). For a log-normal with unit log-variance the gap is 65%. Multiplying by the average $e^{\text{residual}}$ on the training set (Duan's smearing) fixes it, and a unit test checks that the forecasts hit the mean.
+
+## 9. A smaller average loss is not a better model until it's tested
+
+The Diebold–Mariano test compares the average loss difference with its standard error. The catch is that the daily differences are not independent: a 5-day target overlaps the next four, and volatility clusters. On simulated data where two models are equally good, the naive standard error "found" a difference **37%** of the time instead of 5%. Newey–West brought that down to about 7%. With it, the picture became clearer:
+- at 5 days, the linear model beat HAR (p = 0.006) and XGBoost lost to the linear model (p = 0.008);
+- at 22 days, almost nothing could be told apart.
+
+Ranking models by a single average would have hidden both facts.
+
+## 10. Choose the loss that can actually see a difference
+
+With MSE, no model was significantly different from HAR on more than 2 of 27 assets. With QLIKE, the linear model was significantly better on 16. MSE squares errors, so a few crisis days decide everything and the noise is huge. QLIKE looks at ratios, so every day contributes. The loss function decides not only who wins, but whether you can tell at all.
+
+## 11. Crises are where models differ, and where tests are weakest
+
+In COVID every model cut HAR's QLIKE by 38–56%, and the linear model with the VIX did best in every stress period, because the VIX jumps on day one while past volatility takes time to catch up. But a crisis is short: with 94 days, even a 56% improvement was not statistically significant. The periods that matter most for risk are exactly the ones with the least data to judge by.
