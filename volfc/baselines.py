@@ -44,9 +44,13 @@ def har_forecast(r, h, oos_start, refit_every=22):
         train = slice(0, i - h + 1)
         beta = np.linalg.lstsq(A[train], y.iloc[train].to_numpy(), rcond=None)[0]
         block = slice(i, i + refit_every)
-        out.iloc[block] = A[block] @ beta
-    # ponytail: linear model can (rarely) go negative; floor it rather than switch to log-HAR
-    return out.dropna().clip(lower=1e-6)
+        pred = A[block] @ beta
+        # Insanity filter: a linear model can predict a variance below anything ever observed, even
+        # negative (after a one-day crash, b_d is too small to cancel b0 + ...). QLIKE punishes a
+        # near-zero forecast without limit, so fall back to the past month's realized variance.
+        floor = y.iloc[train].min()
+        out.iloc[block] = np.where(pred < floor, X.rv_m.iloc[block], pred)
+    return out.dropna()
 
 
 def garch_forecast(r, h, oos_start, refit_every=22):

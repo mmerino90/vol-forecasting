@@ -2,7 +2,7 @@
 
 I built this project to prepare for *Numerical Methods for Finance*, *Financial Engineering* and *Applied Computational Finance*, after a [Monte Carlo option pricer](https://github.com/mmerino90/mc-option-pricing) where volatility was simply an input, σ = 20%. Here it is the thing to predict. These are the ideas that stuck, each tied to the experiment that taught it to me.
 
-*(Phases 1–2 so far; this file grows with the project.)*
+*(Phases 1–3 so far; this file grows with the project.)*
 
 ---
 
@@ -25,3 +25,15 @@ HAR beats GARCH on MSE; GARCH beats HAR on QLIKE. MSE is dominated by a handful 
 ## 5. Mean reversion matters more than reacting fast
 
 Historical vol and EWMA only look backwards: after a spike they stay high until the spike drops out of the window. GARCH and HAR also pull the forecast back toward a long-run level (fitted α + β = 0.988, a shock half-life of about 58 days), and that alone cuts MSE by 17–39%.
+
+## 6. Better inputs beat a fancier model
+
+On 27 assets, XGBoost and a neural network never beat a plain linear regression given the same ten features. At 22 days they lost to HAR itself. The linear model's gains over HAR came from what it was given: logs instead of levels, the VIX, a quarter of past volatility. XGBoost's own feature importance agreed: 83% of its gain came from past volatility and 12% from the VIX. With a noisy target and a few thousand days per asset, a flexible model mostly learns noise. A **linear control with the same inputs** is what separates "better features" from "better method", and without it I would have credited XGBoost for the features.
+
+## 7. Check the baseline as hard as the challenger
+
+At first every model "beat" HAR by a lot on XOM, CVX and XLE. The reason: right after a one-day crash, a linear HAR can predict a variance near zero or even negative, and QLIKE punishes that without limit. A weak benchmark makes everything else look good. The fix is a standard *insanity filter* (if the forecast is below anything seen in training, use the past month's variance). The lesson is to look at **per-asset results and outliers**, not just one average: the mean and the median of the loss ratios disagreed, and that was the clue.
+
+## 8. Predicting the log gives the median, not the mean
+
+Volatility models work better in logs, because log-variance is roughly symmetric while variance has huge spikes. But $e^{\mathbb{E}[\log y]}$ is the *median* of $y$, which is below its mean (Jensen's inequality again, as in the pricer's $-\tfrac{1}{2}\sigma^2$). For a log-normal with unit log-variance the gap is 65%. Multiplying by the average $e^{\text{residual}}$ on the training set (Duan's smearing) fixes it, and a unit test checks that the forecasts hit the mean.
