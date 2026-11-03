@@ -10,6 +10,7 @@ A computational finance project: forecasting the volatility of the S&P 500 and 2
 - **Machine learning (27 assets, 80,000 out-of-sample asset-days):** XGBoost and a small neural network do **not** beat a plain linear regression on the same features. At 5 days, QLIKE relative to HAR is **0.893** for the linear model, 0.915 for XGBoost and 0.938 for the MLP. At 22 days XGBoost loses to HAR on 15 of 27 assets and the MLP on 20. The gains over HAR come from better inputs (logs, the VIX, quarterly vol), not from non-linear models.
 - **Statistically tested (Diebold–Mariano, pooled over 27 assets):** at 5 days the linear model beats HAR (QLIKE ratio 0.879, p = 0.006), and XGBoost is significantly *worse* than the linear model (p = 0.008). At 22 days only GARCH beats HAR (p = 0.043). MSE is too noisy to separate any two models on almost any asset.
 - **Crises:** in COVID 2020 every model cuts HAR's QLIKE by 38–56%. In 2022 and the April 2025 tariff shock, the linear model with the VIX does best (0.74–0.76 of HAR), while GARCH is no better than HAR in 2025.
+- **Does it pay? (volatility targeting, 27 assets, 10 bp costs):** sizing each position to 10% / forecast vol makes risk far steadier (the variability of 3-month vol falls from 0.43 to 0.15–0.20) and cuts drawdowns, but **better forecasts do not earn a better Sharpe ratio**. The most accurate model by QLIKE (linear) has a portfolio Sharpe of 0.99, HAR 0.97, GARCH 1.01, XGBoost 0.95, the MLP 0.87; none differs significantly from HAR at 5 days. What decides it is **turnover**: GARCH's smooth forecasts trade least, and at 20 bp it leads clearly. An oracle that knows the future would reach 1.84, so the gap is not in the idea but in how little of the future any model sees.
 - **No look-ahead, tested:** a unit test scrambles all returns after a cutoff date and checks that no forecast made before it changes. Each test fails when the bug is planted on purpose.
 
 ## Phases
@@ -20,7 +21,7 @@ A computational finance project: forecasting the volatility of the S&P 500 and 2
 | 2 | Baselines: historical vol, EWMA, GARCH(1,1), HAR | ✅ |
 | 3 | ML: linear regression, XGBoost and a small neural network on vol, returns, volume and VIX features | ✅ |
 | 4 | Evaluation: Diebold–Mariano tests, crisis periods | ✅ |
-| 5 | Application: volatility targeting with transaction costs (Sharpe ratio, drawdown) | ⏳ |
+| 5 | Application: volatility targeting with transaction costs (Sharpe ratio, drawdown) | ✅ |
 
 ## Results
 
@@ -149,6 +150,34 @@ A lower average loss could be luck. The **Diebold–Mariano test** asks whether 
 
 Full tables, including both horizons, in [results/phase4_table.md](results/phase4_table.md).
 
+### Phase 5: does a better forecast make money?
+
+![strategy](results/phase5_strategy.png)
+
+**Volatility targeting:** each day, at the close, hold $w_t = \min(10\% / \hat\sigma_t,\ 2)$ of each asset, where $\hat\sigma_t$ is a model's forecast vol. When volatility is forecast to rise, the position shrinks. Every trade costs 10 bp of the amount traded; cash earns nothing. Each of the 27 assets is traded on its own, and the portfolio holds all 27 with equal weight. Benchmarks: buy-and-hold, a **constant** position sized to 10% vol using 2010–14 data only (same average risk, but no timing), and an **oracle** that knows the future realized variance (impossible: an upper bound).
+
+**Equal-weight portfolio, 5-day forecasts, rebalanced daily (2015–2026):**
+
+| Strategy | Return / yr | Vol | Sharpe | Max drawdown | Turnover / yr | Vol of vol | p (Sharpe vs HAR) |
+|:--|--:|--:|--:|--:|--:|--:|--:|
+| Buy & hold | +16.3% | 15.8% | 1.03 | -30% | 0.1x | 0.57 | 0.61 |
+| Constant 10% (2010–14 vol) | +7.6% | 7.5% | 1.01 | -16% | 0.0x | 0.59 | 0.78 |
+| HAR | +5.9% | 6.1% | 0.97 | -9% | 8.6x | 0.30 | |
+| GARCH(1,1) | +6.0% | 5.9% | **1.01** | -9% | **5.6x** | 0.25 | 0.20 |
+| Linear (all features) | +5.6% | 5.6% | 0.99 | **-8%** | 9.1x | **0.21** | 0.80 |
+| XGBoost | +5.5% | 5.8% | 0.95 | -9% | 11.0x | 0.22 | 0.68 |
+| MLP | +5.0% | 5.7% | 0.87 | -10% | 11.9x | 0.23 | 0.10 |
+| Oracle (knows the future) | +10.5% | 5.7% | 1.84 | -7% | 29.8x | 0.17 | 0.000 |
+
+*Vol of vol* = std / mean of the 3-month rolling volatility (lower is steadier risk). p-values from a circular block bootstrap of the Sharpe difference.
+
+- **Targeting does its job on risk.** Per asset, 3-month volatility varies about half as much (0.15–0.20 vs 0.43), and drawdowns relative to risk are smaller: the constant-risk portfolio loses 16% at 7.5% vol, the targeted ones about 9% at 6%.
+- **It does not raise the Sharpe ratio.** No forecasting model beats buy-and-hold (1.03) after costs, and none is significantly different from HAR at 5 days. At 22 days the MLP is significantly *worse* (p = 0.02).
+- **Accuracy and profit rank differently.** Before costs the ranking follows phase 4 (linear 1.15, XGBoost 1.14, HAR 1.11). After costs it follows **turnover**: ML forecasts jump around more, so they trade more. GARCH is the smoothest and wins from 10 bp up; at 40 bp it keeps 0.72 while the MLP falls to 0.25.
+- **The oracle shows what is at stake:** a Sharpe of 1.84 with perfect variance forecasts. Part of that is not volatility at all: knowing the variance means knowing a crash is coming, and crashes are also where returns are worst.
+
+Full tables, per-asset averages and both horizons in [results/phase5_table.md](results/phase5_table.md).
+
 ## Usage
 
 ```bash
@@ -160,12 +189,13 @@ python -m experiments.phase1_data        # downloads data/ on the first run (Yah
 python -m experiments.phase2_baselines
 python -m experiments.phase3_ml          # ~15 minutes (GARCH on 27 assets); caches forecasts in data/
 python -m experiments.phase4_evaluation  # uses phase 3's cached forecasts
+python -m experiments.phase5_strategy    # uses phase 3's cached forecasts
 ```
 
 ## Layout
 
 ```
-volfc/          Python package: data and realized vol, baselines, features, walk-forward ML, loss functions
+volfc/          Python package: data and realized vol, baselines, features, walk-forward ML, loss functions, volatility targeting
 experiments/    one script per phase; each regenerates its plot and table in results/
 tests/          pytest suite
 data/           cached Yahoo Finance downloads and forecasts (git-ignored; prices up to 2026-10-30)

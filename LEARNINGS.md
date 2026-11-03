@@ -2,8 +2,6 @@
 
 I built this project to prepare for *Numerical Methods for Finance*, *Financial Engineering* and *Applied Computational Finance*, after a [Monte Carlo option pricer](https://github.com/mmerino90/mc-option-pricing) where volatility was simply an input, σ = 20%. Here it is the thing to predict. These are the ideas that stuck, each tied to the experiment that taught it to me.
 
-*(Phases 1–4 so far; this file grows with the project.)*
-
 ---
 
 ## 1. You can't predict returns, but you can predict their size
@@ -53,3 +51,15 @@ With MSE, no model was significantly different from HAR on more than 2 of 27 ass
 ## 11. Crises are where models differ, and where tests are weakest
 
 In COVID every model cut HAR's QLIKE by 38–56%, and the linear model with the VIX did best in every stress period, because the VIX jumps on day one while past volatility takes time to catch up. But a crisis is short: with 94 days, even a 56% improvement was not statistically significant. The periods that matter most for risk are exactly the ones with the least data to judge by.
+
+## 12. A better forecast is not a better strategy
+
+The linear model was the most accurate by QLIKE, yet as a volatility-targeting strategy it earned a Sharpe ratio of 0.99 against GARCH's 1.01, and nothing was significantly different from HAR. The reason is **turnover**: a forecast that reacts to every wiggle trades every day, and at 10 bp per trade that eats the gain. GARCH's slow, smooth forecasts traded about half as much as XGBoost and the MLP. Before costs the ranking matched the forecasting results; after costs it matched turnover. A loss function measures accuracy, not how expensive the forecast is to follow.
+
+## 13. Know what the tool is for
+
+Volatility targeting did not raise the Sharpe ratio above buy-and-hold (1.03). It did what it is designed to do: risk became steady (the variability of 3-month vol halved) and drawdowns shrank relative to that risk. Judging it by Sharpe alone would call it useless; judging it by risk control shows it working. An honest comparison needs a benchmark with the same average risk (here a constant position sized on 2010–14 data), otherwise lower drawdowns just reflect smaller positions.
+
+## 14. An oracle sets the ceiling
+
+A strategy that knows the future variance reaches a Sharpe of 1.84, so there is a lot at stake in principle. But the best real model captures almost none of it, and part of the oracle's edge is not about volatility: knowing the variance is high means knowing a crash is coming. Comparing with an oracle shows how far from the ceiling every model is, and keeps a small "improvement" in perspective.
